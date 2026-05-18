@@ -12,6 +12,7 @@ from .. import perflib
 from ..logger import get_logger
 from ..model.box_ops import box_xywh_to_cxcywh, box_xyxy_to_xywh
 from ..model.data_misc import BatchedDatapoint
+from ..model.device_utils import get_accelerator_device
 from ..model.sam3_multiplex_base import MaskletConfirmationStatus, Sam3MultiplexBase
 from ..model.sam3_tracker_utils import fill_holes_in_mask_scores
 from ..model.sam3_video_inference import is_image_type
@@ -209,17 +210,11 @@ class Sam3MultiplexTracking(Sam3MultiplexBase):
         resource_path,
         offload_video_to_cpu=False,
         async_loading_frames=False,
-        use_torchcodec=False,
         use_cv2=False,
         input_is_mp4=False,
     ):
         # Initialize inference state (inlined from Sam3DemoMixin.init_state)
-        if use_torchcodec:
-            video_loader_type = "torchcodec"
-        elif use_cv2:
-            video_loader_type = "cv2"
-        else:
-            video_loader_type = "cv2"
+        video_loader_type = "cv2" if use_cv2 else "ffmpeg"
         images, orig_height, orig_width = load_resource_as_video_frames(
             resource_path=resource_path,
             image_size=self.image_size,
@@ -232,7 +227,7 @@ class Sam3MultiplexTracking(Sam3MultiplexBase):
         inference_state = {}
         inference_state["image_size"] = self.image_size
         inference_state["num_frames"] = len(images)
-        inference_state["device"] = torch.device("cuda")
+        inference_state["device"] = get_accelerator_device()
         inference_state["orig_height"] = orig_height
         inference_state["orig_width"] = orig_width
         inference_state["constants"] = {}
@@ -1224,11 +1219,11 @@ class Sam3MultiplexTracking(Sam3MultiplexBase):
         removed_obj_ids=None,
         unconfirmed_obj_ids=None,
     ):
+        if not inference_state.get("cache_frame_outputs", True):
+            return
+
         if "cached_frame_outputs" not in inference_state:
             inference_state["cached_frame_outputs"] = {}
-
-        # Filter out suppressed, removed, and unconfirmed objects from the cache
-        filtered_obj_id_to_mask = obj_id_to_mask.copy()
 
         objects_to_exclude = set()
         if suppressed_obj_ids is not None:
@@ -1238,18 +1233,24 @@ class Sam3MultiplexTracking(Sam3MultiplexBase):
         if unconfirmed_obj_ids is not None:
             objects_to_exclude.update(unconfirmed_obj_ids)
 
-        if objects_to_exclude:
-            for obj_id in objects_to_exclude:
-                if obj_id in filtered_obj_id_to_mask:
-                    del filtered_obj_id_to_mask[obj_id]
-
-        inference_state["cached_frame_outputs"][frame_idx] = filtered_obj_id_to_mask
+        # This cache is only used for later fetch/refine output assembly. The tracker
+        # keeps its active low-res memory separately, so video-res masks should not pin VRAM.
+        inference_state["cached_frame_outputs"][frame_idx] = {
+            obj_id: self._cache_output_mask(mask)
+            for obj_id, mask in obj_id_to_mask.items()
+            if obj_id not in objects_to_exclude
+        }
 
     def _build_sam2_output(
         self, inference_state, frame_idx, refined_obj_id_to_mask=None
     ):
-        if not frame_idx in inference_state["cached_frame_outputs"]:
-            return {} if refined_obj_id_to_mask is None else refined_obj_id_to_mask.copy()
+        if frame_idx not in inference_state["cached_frame_outputs"]:
+            if refined_obj_id_to_mask is None:
+                return {}
+            return {
+                obj_id: self._cache_output_mask(mask)
+                for obj_id, mask in refined_obj_id_to_mask.items()
+            }
 
         cached_outputs = inference_state["cached_frame_outputs"][frame_idx]
         obj_id_to_mask = cached_outputs.copy()
@@ -1260,9 +1261,15 @@ class Sam3MultiplexTracking(Sam3MultiplexBase):
                 assert refined_mask is not None, (
                     f"Refined mask data must be provided for obj_id {obj_id}"
                 )
-                obj_id_to_mask[obj_id] = refined_mask
+                obj_id_to_mask[obj_id] = self._cache_output_mask(refined_mask)
 
         return obj_id_to_mask
+
+    @staticmethod
+    def _cache_output_mask(mask):
+        if torch.is_tensor(mask):
+            return mask.detach().to(device="cpu", non_blocking=True, copy=True)
+        return np.array(mask, copy=True)
 
     def _compile_model(self):
         """Compile the SAM model with torch.compile for speedup."""
@@ -1630,9 +1637,9 @@ class Sam3MultiplexTracking(Sam3MultiplexBase):
         if not self.compile_model:
             return
         self._warm_up_complete = False
-        if self.device.type != "cuda":
+        if self.device.type not in {"cuda", "mps"}:
             raise RuntimeError(
-                f"The model must be on CUDA for warm-up compilation, got {self.device=}."
+                f"The model must be on an accelerator for warm-up compilation, got {self.device=}."
             )
 
         # temporally set to single GPU temporarily for warm-up compilation
@@ -1846,7 +1853,6 @@ class Sam3MultiplexTrackingProd(Sam3MultiplexTracking):
         resource_path,
         offload_video_to_cpu=False,
         async_loading_frames=False,
-        use_torchcodec=False,
         use_cv2=False,
         input_is_mp4=False,
     ):
@@ -1854,7 +1860,6 @@ class Sam3MultiplexTrackingProd(Sam3MultiplexTracking):
             resource_path=resource_path,
             offload_video_to_cpu=offload_video_to_cpu,
             async_loading_frames=async_loading_frames,
-            use_torchcodec=use_torchcodec,
             use_cv2=use_cv2,
             input_is_mp4=input_is_mp4,
         )
@@ -2233,7 +2238,6 @@ class Sam3MultiplexTrackingWithInteractivity(Sam3MultiplexTracking):
         resource_path,
         offload_video_to_cpu=False,
         async_loading_frames=False,
-        use_torchcodec=False,
         use_cv2=False,
         input_is_mp4=False,
     ):
@@ -2241,7 +2245,6 @@ class Sam3MultiplexTrackingWithInteractivity(Sam3MultiplexTracking):
             resource_path=resource_path,
             offload_video_to_cpu=offload_video_to_cpu,
             async_loading_frames=async_loading_frames,
-            use_torchcodec=use_torchcodec,
             use_cv2=use_cv2,
             input_is_mp4=input_is_mp4,
         )

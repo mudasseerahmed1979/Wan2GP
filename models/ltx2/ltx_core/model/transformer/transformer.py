@@ -231,7 +231,10 @@ class BasicAVTransformerBlock(torch.nn.Module):
         audio: TransformerArgs | None,
         perturbations: BatchedPerturbationConfig | None = None,
     ) -> tuple[TransformerArgs | None, TransformerArgs | None]:
-        batch_size = video.x.shape[0]
+        source = video if video is not None else audio
+        if source is None:
+            raise ValueError("BasicAVTransformerBlock requires at least one modality.")
+        batch_size = source.x.shape[0]
         if perturbations is None:
             perturbations = BatchedPerturbationConfig.empty(batch_size)
 
@@ -243,6 +246,8 @@ class BasicAVTransformerBlock(torch.nn.Module):
 
         run_a2v = run_vx and (audio is not None and audio.enabled and ax.numel() > 0)
         run_v2a = run_ax and (video is not None and video.enabled and vx.numel() > 0)
+        run_a2v = run_a2v and not perturbations.all_in_batch(PerturbationType.SKIP_A2V_CROSS_ATTN, self.idx)
+        run_v2a = run_v2a and not perturbations.all_in_batch(PerturbationType.SKIP_V2A_CROSS_ATTN, self.idx)
 
         if run_vx:
             vshift_msa, vscale_msa, vgate_msa = self.get_ada_values(

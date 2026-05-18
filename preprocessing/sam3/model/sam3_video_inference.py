@@ -58,7 +58,7 @@ class Sam3VideoInference(Sam3VideoBase):
         offload_video_to_cpu=False,
         offload_state_to_cpu=False,
         async_loading_frames=False,
-        video_loader_type="cv2",
+        video_loader_type="ffmpeg",
     ):
         """Initialize an inference state from `resource_path` (an image or a video)."""
         images, orig_height, orig_width = load_resource_as_video_frames(
@@ -533,8 +533,8 @@ class Sam3VideoInference(Sam3VideoBase):
         removed_obj_ids=None,
         unconfirmed_obj_ids=None,
     ):
-        # Filter out suppressed, removed, and unconfirmed objects from the cache
-        filtered_obj_id_to_mask = obj_id_to_mask.copy()
+        if not inference_state.get("cache_frame_outputs", True):
+            return
 
         objects_to_exclude = set()
         if suppressed_obj_ids is not None:
@@ -544,12 +544,17 @@ class Sam3VideoInference(Sam3VideoBase):
         if unconfirmed_obj_ids is not None:
             objects_to_exclude.update(unconfirmed_obj_ids)
 
-        if objects_to_exclude:
-            for obj_id in objects_to_exclude:
-                if obj_id in filtered_obj_id_to_mask:
-                    del filtered_obj_id_to_mask[obj_id]
+        inference_state["cached_frame_outputs"][frame_idx] = {
+            obj_id: self._cache_output_mask(mask)
+            for obj_id, mask in obj_id_to_mask.items()
+            if obj_id not in objects_to_exclude
+        }
 
-        inference_state["cached_frame_outputs"][frame_idx] = filtered_obj_id_to_mask
+    @staticmethod
+    def _cache_output_mask(mask):
+        if torch.is_tensor(mask):
+            return mask.detach().to(device="cpu", non_blocking=True, copy=True)
+        return np.array(mask, copy=True)
 
     def _build_tracker_output(
         self, inference_state, frame_idx, refined_obj_id_to_mask=None
@@ -807,9 +812,9 @@ class Sam3VideoInference(Sam3VideoBase):
         if not self.compile_model:
             return
         self._warm_up_complete = False
-        if self.device.type != "cuda":
+        if self.device.type not in {"cuda", "mps"}:
             raise RuntimeError(
-                f"The model must be on CUDA for warm-up compilation, got {self.device=}."
+                f"The model must be on an accelerator for warm-up compilation, got {self.device=}."
             )
 
         # temporally set to single GPU temporarily for warm-up compilation

@@ -33,7 +33,34 @@ WanGP supports the Wan (and derived models) but also Hunyuan Video, Flux, Qwen, 
 
 
 ## 🔥 Latest Updates : 
-### 28th of April 2026: WanGP v11.50, a Kind of Magic
+### 12th of May 2026: WanGP v11.66, Can you keep up?
+
+- **HiDreamO1**: New Image Image model with editing capabilities is quite good to preserve identify and write text. WanGP version requires very Low VRAM and supports out of the Box *Control Image* & *Preview*.
+
+- **Omnivoice**: This *Text To Speech model* (TTS) is fast and supports 100 languages with voice cloning. WanGP offers as a bonus an experimental dialogue mode (not the best one since it is hard to predict when Omnivoice has finished generating)
+
+- **ScenemeAI**: A LTX2.3 derived *TTS* that leverages *LTX-2* world knowledge : it can produce lifelike audio generations since you can drive the audio generation by describing what a speaker is doing / saying. I have implemented on top a dialogue mode between any number of speakers (first two speakers support voice cloning) with very smooth transitions between speakers especially when generating English. You will find ScenemeAI among the *TTS models* but be aware it will use by default a *Video Memory Profile* since it uses LTX2 engine behind the scene. Don't hesitate to use WanGP *Prompt Enhancer* to generate lively dialogues.
+
+- **MPS / Apple Early Support**: Mac users are about to discover the world of WanGP albeit for start it wont be fast nor very optimized and not all models will be supported. Many thanks to *huangyebiaoke* (for the port), *cn0ss* & *SquishedSquirrel* (for the testing). Don't hesitate to report in the new *MPS* Discord channel your feedback if you are a mac user.
+
+### 9th of May 2026: WanGP v11.61, The Last Mile
+
+With a slight (half year) delay WanGP supports now officially *FlashVSR* a very high quality *Spatial Upsampler* which can upsample up to 4x you videos. As FlashVSR has been almost entirely rewritten for WanGP, it can be branded as the *Ultimate Upsampler for the GPU Poor*, check these figures:
+- x2 Spatial Upsampling will need to work only 6GB of VRAM
+- x4 Spatial Upsampling will require only 10GB of VRAM (see the 5k example below)
+
+The VRAM requirements above are independent of the Video Length (still the longer the video the more RAM)
+
+You first need to install *Triton* and optionally *SpargeAttention* for best quality (please check the INSTALLATION.md for download links) and enable *FlashVSR* in the *Configuration > Extensions* Tab.
+
+FlashVSR is available in the following contexts:
+- a Postprocessing option in *Advanced Tab > Postprocessing*
+- a *Late Postprocessing* that can be applied on already generated videos
+- in Model *WanGP System Postprocessing* of the *Process Full Video* Plugin you can Upsample a few hours long Video !
+
+Please note as FlashVSR is now natively supported by WanGP and highly optimized, you may no longer need the *FlashVSR Plugin* developed by @h4k4z3. In any case many thanks to @h4k4z3 for developing this plugin which was very useful.
+
+### 2nd of May 2026: WanGP v11.52, a Kind of Magic
 
 - **Vista 4D**: Vista4D allows a *Video Reshooting* of a *Dynamic scene* from novel camera trajectories and viewpoints. In other words this Wan 2.1 model will let you relive from a different (moving) perspective a scene with moving people or objects. The sequences are quite short (usually 49 frames, max around 97 frames) but it is a lot of fun as for once this really works. 
 
@@ -44,6 +71,11 @@ It is highly recommended to apply the *Lightx2v 4 steps* lora profile. Also for 
 - **Magic Mask**: generating a *Video Mask* or *Image Mask* has never been easier and faster. No need to get into the *Video Mask Generator* tab, just click the *Magic Wand* next to *Mask field* and enter a few keywords like *blue car* or *lady to the right* and a high quality mask powered by *SAM3* will be generated automatically. You will appreciate the very good *Temporal Consistency* brought by SAM3.
 
 - **Video Mask Generator with SAM3 support**: if you still need to generate complex masks you can combine the good old point and click masks with the SAM3 / Magic Mask masks. You need to enable this feature in the *Config / Extensions* tab.
+
+- **LTX-2 Video to Audio**: it was more or less already possible but this new Control Video Process will be much faster and the output video will be unaltered
+
+*update 11.51*: various fixes\
+*update 11.52*: LTX-Video to Audio, fixed bugs in audio continuation with sliding windows 
 
 ### 25th of April 2026: WanGP v11.41, LTX-2 Mega Mix Part 2
 More nice goodies for **LTX-2**:
@@ -214,24 +246,28 @@ If you selected Manual Install, you will be guided through:
 #### 2️⃣ Starting the App (`scripts\run.bat` | `scripts/run.sh`)
 Once installed, use this script to launch the application. It runs WAN2GP using your active environment.
 
-##### ⚙️ Customizing Launch Arguments (`args.txt`)
-If you want to pass extra command-line flags to the WAN2GP launcher (like enabling advanced UI features or automatically opening your browser), create an `args.txt` file in your `scripts` folder.
-
-**Example `args.txt`:**
-```text
---advanced  --open-browser
-```
+*   **⚙️ Customizing Launch Arguments (`args.txt`)**
+    *   If you want to pass extra command-line flags to the launcher (like enabling advanced UI features or automatically opening your browser), create an `args.txt` file in your `scripts` folder.
+    *   **Example `args.txt`:**
+        ```text
+        --advanced --open-browser
+        ```
 
 #### 3️⃣ Updating & Upgrading (`scripts\update.bat` | `scripts/update.sh`)
 Use this script to get the latest updates for WAN2GP and upgrade dependencies.
-* **1. Update:** Fetches the latest code from GitHub (`git pull`) and updates requirements (`pip install -r requirements.txt`).
-* **2. Upgrade:** Allows you to manually individually upgrade heavy backend components (like PyTorch, Triton, Sage Attention) based on your hardware profile.
+* **1. Update:** Fetches the latest code from GitHub and updates requirements.
+* **2. Upgrade:** Allows you to manually individually upgrade heavy backend components (like PyTorch, Triton, Sage Attention).
 
-#### 4️⃣ Managing Environments (`scripts\manage.bat` | `/manage.sh`)
+#### 4️⃣ Managing Environments (`scripts\manage.bat` | `scripts/manage.sh`)
 Use this script to manage and switch between your sandboxed environments safely.
 
-* **Example Scenario:** Let's say you have an environment named `env_stable` that works perfectly, but you want to try the new "Use Latest" combo. Instead of risking your working setup, you can run `install.bat`, create a *new* environment called `env_testing`, and select "Use Latest".
-* If the testing environment breaks or gives you errors, you can simply open `manage.bat`, select **Set Active Environment**, and switch back to `env_stable`. You are back up and running instantly.
+* **Example Scenario 1: Migrating an Existing Setup**
+    * If you have a folder named `venv` that works perfectly and want to use it with the new one-click scripts, run `manage.bat` and select **Add Existing Environment**.
+    * Copy-paste the folder path (e.g., `C:\WAN2GP\venv`), select type `venv`, then use **Set Active Environment** to make it the default. Now `run.bat` and `update.bat` will target your existing setup.
+
+* **Example Scenario 2: Testing New Configurations**
+    * Let's say you have an environment named `env_stable` that works perfectly, but you want to try the new "Use Latest" combo. Instead of risking your working setup, run `install.bat`, create a *new* environment called `env_testing`, and select **Use Latest**.
+    * If the testing environment breaks, simply open `manage.bat`, select **Set Active Environment**, and switch back to `env_stable`. You are back up and running instantly.
 
 ---
 
@@ -250,7 +286,7 @@ git clone https://github.com/deepbeepmeep/Wan2GP.git
 cd Wan2GP
 conda create -n wan2gp python=3.11.14
 conda activate wan2gp
-pip install torch==2.10.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130
 pip install -r requirements.txt
 ```
 
@@ -261,7 +297,7 @@ git clone https://github.com/deepbeepmeep/Wan2GP.git
 cd Wan2GP
 conda create -n wan2gp python=3.10.9
 conda activate wan2gp
-pip install torch==2.7.1 torchvision torchaudio --index-url https://download.pytorch.org/whl/test/cu128
+pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/test/cu128
 pip install -r requirements.txt
 ```
 
@@ -291,9 +327,9 @@ conda rename -n wan2gp  old_wan2gp
 Get in the directory where WanGP is installed and:
 ```bash
 git pull
-conda create -n wa2gp python=3.11.9
+conda create -n wan2gp python=3.11.9
 conda activate wan2gp
-pip install torch==2.10.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130
 pip install -r requirements.txt
 ```
 
