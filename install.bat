@@ -1,6 +1,6 @@
 @set @x=0 /*
 @echo off
-cd /d "%~dp0.."
+cd /d "%~dp0"
 setlocal enabledelayedexpansion
 title WanGP Installer
 
@@ -37,7 +37,6 @@ python setup.py install --env !ENV_TYPE! !AUTO_FLAG!
 echo ======================================================
 echo [*] Installation complete!
 echo ======================================================
-pause
 exit /b 0
 
 :INSTALL_PYTHON
